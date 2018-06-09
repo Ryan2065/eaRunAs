@@ -2,7 +2,7 @@ Function Set-eaRunAsRunspaceToken {
     Param(
         [pscredential]$Credential,
         [int]$LogonType = 9,
-        [int]$LogonProvider = 3
+        [int]$LogonProvider = 0
     )
     $null = Add-Type -Namespace eaRunAs -Name RunAs -MemberDefinition @' 
     [DllImport("advapi32.dll", SetLastError = true)] 

@@ -1,4 +1,27 @@
 Function Set-eaRunAsRunspaceToken {
+    <#
+    .SYNOPSIS
+    Will make the current runspace run under a different token
+    
+    .DESCRIPTION
+    Makes the current runspace thread run under a different token. Doesn't always filter through to all PowerShell commands though
+    
+    .PARAMETER Credential
+    Credential you want the runspace to run under
+    
+    .PARAMETER LogonType
+    Logon Type
+    
+    .PARAMETER LogonProvider
+    Logon Provider
+    
+    .EXAMPLE
+    Set-eaRunAsRunspaceToken -Credential $MyCred
+    
+    .NOTES
+    .Author: Ryan Ephgrave
+    
+    #>
     Param(
         [pscredential]$Credential,
         [int]$LogonType = 9,

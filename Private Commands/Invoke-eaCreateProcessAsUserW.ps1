@@ -1,8 +1,39 @@
 Function Invoke-eaCreateProcessAsUserW {
+    <#
+    .SYNOPSIS
+    Creates a new process running under alternate network credentials
+    
+    .DESCRIPTION
+    uses CreateProcessAsUserW to create a new process that will access local resources as you and 
+    network resources as the remote user
+    
+    .PARAMETER Credential
+    Credential with the domain information to connect to the remote machine
+    
+    .PARAMETER FullExePath
+    Full path to the exe you wish to run
+    
+    .PARAMETER Arguments
+    Command line arguments to send to the exe. Needs to be a string, not array
+    
+    .PARAMETER ShowUI
+    Do we want the UI shown, or hidden?
+    
+    .EXAMPLE
+    $CreateProcessID = Invoke-eaCreateProcessAsUserW -Credential $Credential -FullExePath (Get-Process -Id $PID).Path -Arguments '-NoExit' -ShowUI
+    This will launch a new process of PowerShell
+    
+    .NOTES
+    .Author: Ryan Ephgrave
+    #>
     Param(
+        [Parameter(Mandatory=$true)]
         [pscredential]$Credential,
+        [Parameter(Mandatory=$true)]
         [string]$FullExePath,
+        [Parameter(Mandatory=$false)]
         [string]$Arguments,
+        [Parameter(Mandatory=$false)]
         [switch]$ShowUI
     )
     Add-eaRunAsDefinition

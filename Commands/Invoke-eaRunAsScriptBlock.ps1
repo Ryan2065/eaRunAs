@@ -1,4 +1,39 @@
 Function Invoke-eaRunAsScriptBlock {
+    <#
+    .SYNOPSIS
+    Run scriptblock as another user using CreateProcessWithLogonW so it will run with net only credentials
+    
+    .DESCRIPTION
+    This will create another process of PowerShell using the method CreateProcessWithLogonW
+    and then run the supplied scriptblock in this separate process. This will allow you to run 
+    network commands with the supplied credentials but without using up the first hop. Note, local
+    resources will NOT use the supplied credentials, only remote calls to other computers will.
+    
+    .PARAMETER ScriptBlock
+    Scriptblock to run
+    
+    .PARAMETER Credential
+    Credentials to run the scriptblock as
+    
+    .PARAMETER Parameters
+    Parameters to pass the scriptblock
+    
+    .PARAMETER ImportModules
+    Modules to import into the scriptblock. Just supply the module name and make sure the current
+    session can see the modules
+    
+    .PARAMETER ImportVariables
+    Variables to import. Stored as a Hashtable so the key will be the name of the variable and the value will be 
+    what you want the variable to be set as
+    
+    .EXAMPLE
+    Invoke-eaRunAsScriptBlock -Credential $MyCredential -ScriptBlock { Get-WMIObject -ComputerName "MyRemoteComputer" -Class Win32_OperatingSystem }
+    This will run the Get-WMIObject command on the remote computer.
+    
+    .NOTES
+    .Author: Ryan Ephgrave
+    
+    #>
     [CmdletBinding()]
     Param(
         [Parameter(Mandatory=$true)]

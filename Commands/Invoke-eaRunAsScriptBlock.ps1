@@ -2,9 +2,6 @@ Function Invoke-eaRunAsScriptBlock {
     [CmdletBinding()]
     Param(
         [Parameter(Mandatory=$true)]
-        [ValidateSet('Runspace', 'Process')]
-        [string]$RunAsMethod,
-        [Parameter(Mandatory=$true)]
         [ScriptBlock]$ScriptBlock,
         [Parameter(Mandatory=$true)]
         [pscredential]$Credential,
@@ -13,24 +10,17 @@ Function Invoke-eaRunAsScriptBlock {
         [Parameter(Mandatory=$false)]
         [string[]]$ImportModules,
         [Parameter(Mandatory=$false)]
-        [hashtable]$ImportVariables = @{},
-        [Parameter(Mandatory=$false)]
-        [int]$LogonType = 9
+        [hashtable]$ImportVariables = @{}
     )
     
     $Runspace = $null
     try{
-        if($RunAsMethod -eq 'Process') {
-            $CreateProcessID = Invoke-eaCreateProcessAsUserW -Credential $Credential -FullExePath (Get-Process -Id $PID).Path -Arguments '-NoExit'
-            $Runspace = [System.Management.Automation.Runspaces.RunspaceFactory]::CreateRunspace(
-                (New-Object -TypeName System.Management.Automation.Runspaces.NamedPipeConnectionInfo -ArgumentList @($CreateProcessID)), 
-                $Host, 
-                ([System.Management.Automation.Runspaces.TypeTable]::LoadDefaultTypeFiles())
-            )
-        }
-        else {
-            $Runspace = [runspacefactory]::CreateRunspace()
-        }
+        $CreateProcessID = Invoke-eaCreateProcessAsUserW -Credential $Credential -FullExePath (Get-Process -Id $PID).Path -Arguments '-NoExit'
+        $Runspace = [System.Management.Automation.Runspaces.RunspaceFactory]::CreateRunspace(
+            (New-Object -TypeName System.Management.Automation.Runspaces.NamedPipeConnectionInfo -ArgumentList @($CreateProcessID)), 
+            $Host, 
+            ([System.Management.Automation.Runspaces.TypeTable]::LoadDefaultTypeFiles())
+        )
         $null = $Runspace.Open()
     }
     catch {
@@ -60,19 +50,6 @@ Function Invoke-eaRunAsScriptBlock {
     if($PSBoundParameters['Debug']) {
         $ImportVariables['DebugPreference'] = [System.Management.Automation.ActionPreference]::Continue
     }
-
-    Switch($RunAsMethod){
-        'Runspace' {
-            $ImportVariables['eaCredential'] = $Credential
-            $ImportVariables['eaLogonType'] = $LogonType
-            $ImportVariables['SetRunspaceToken'] = $true
-        }
-        'Process' {
-            $ImportVariables['SetRunspaceToken'] = $false
-        }
-    }
-
-
     # In the "Process" method, I cannot set the InitialSessionState, so instead both methods use this scriptblock to set initial
     # Modules and variables
     $InitialSessionScriptBlock = {
@@ -99,16 +76,6 @@ Function Invoke-eaRunAsScriptBlock {
     
     #endregion
 
-
-    if($RunAsMethod -eq 'Runspace'){
-        if($eaRunAsModule = Get-Module -Name 'eaRunAs' -ErrorAction SilentlyContinue){
-            $RunspaceTokenScript = Get-Content "$($eaRunAsModule.ModuleBase)\Private Commands\Set-eaRunAsRunspaceToken.ps1" -Raw
-            $PowerShell.AddScript($RunspaceTokenScript)
-            $null = $PowerShell.Invoke()
-        }
-        $PowerShell.AddScript('$null = Set-eaRunAsRunspaceToken -Credential $eaCredential -LogonType $eaLogonType')
-        $null = $PowerShell.Invoke()
-    }
     $ScriptBlockString = $ScriptBlock.ToString()
     $null = $PowerShell.AddScript($ScriptBlockString)
     if($null -ne $Parameters){
@@ -116,60 +83,47 @@ Function Invoke-eaRunAsScriptBlock {
             $null = $PowerShell.AddParameter($key, $Parameters[$key])
         }
     }
-    
-    $StreamsToCollect = 'Verbose','Progress','Warning','Debug','Error'
-    if($RunAsMethod -eq 'Process') {
-        $PowerShell.Invoke()
-    }
-    else {
+    try{
         $PSObject = New-Object 'System.Management.Automation.PSDataCollection[psobject]'
         $BeginInvoke = $PowerShell.BeginInvoke($PSObject, $PSObject)
         while($false -eq $BeginInvoke.IsCompleted){
-            Start-sleep -Milliseconds 100
+            Start-sleep -Milliseconds 50
             if($PSObject.Count -gt 0){
                 $PSObject.ReadAll()
-            }
-            foreach($St in $StreamsToCollect) {
-                if($PowerShell.Streams.$St.Count -gt 0){
-                    foreach($rec in $PowerShell.Streams.$St.ReadAll()){
-                        Write-eaRunAsStream -StreamRecord $rec
-                    }
-                }
             }
         }
         if($PSObject.Count -gt 0){
             $PSObject.ReadAll()
         }
-        foreach($St in $StreamsToCollect) {
-            if($PowerShell.Streams.$St.Count -gt 0){
-                foreach($rec in $PowerShell.Streams.$St.ReadAll()){
-                    Write-eaRunAsStream -StreamRecord $rec
-                }
-            }
-        }
-    }
-    if($PowerShell.HadErrors) {
-        $threw = $false
         if($PowerShell.InvocationStateInfo.State -eq 'Failed'){
             if($null -ne $PowerShell.InvocationStateInfo.Reason) {
-                $threw = $true
                 throw $PowerShell.InvocationStateInfo.Reason
             }
         }
-        if($false -eq $threw) {
-            if($BeginInvoke -ne $null){
-                $null = $PowerShell.EndInvoke($BeginInvoke)
-            }
-            else {
-                throw "Script had an unretrievable error"
+    }
+    catch [System.Management.Automation.RemoteException] {
+        if($PowerShell.InvocationStateInfo.State -eq 'Failed'){
+            if($null -ne $PowerShell.InvocationStateInfo.Reason) {
+                if($null -ne $PowerShell.InvocationStateInfo.Reason.SerializedRemoteInvocationInfo) {
+                    $WarningMessage = ''
+                    $MemberProperties = $PowerShell.InvocationStateInfo.Reason.SerializedRemoteInvocationInfo | Get-Member -MemberType Property
+                    foreach($Property in $MemberProperties.Name){
+                        $WarningMessage += "`"$($Property)`": $($PowerShell.InvocationStateInfo.Reason.SerializedRemoteInvocationInfo.$Property)`n"
+                    }
+                    Write-Warning -Message "Detailed Error Message:`n$($WarningMessage)"
+                }
+                throw $PowerShell.InvocationStateInfo.Reason
             }
         }
+        else {
+            throw
+        }
     }
-    $null = $PowerShell.Dispose()
-    $null = $Runspace.Dispose()
-    if($RunAsMethod -eq 'Process'){
+    finally {
+        $null = $Runspace.Dispose()
+        $null = $PowerShell.Dispose()
         if(Get-Process -Id $CreateProcessID -ErrorAction SilentlyContinue) {
-            $null = Stop-Process -Id $CreateProcessID -Force
+            $null = Stop-Process -Id $CreateProcessID -Force -ErrorAction SilentlyContinue
         }
     }
 }
